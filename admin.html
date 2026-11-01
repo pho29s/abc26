@@ -89,16 +89,20 @@ document.addEventListener('click', async e => {
   if (!btn) return;
   const uid = btn.getAttribute('data-uid');
   const act = btn.getAttribute('data-act');
+  if (!btn.dataset.armed) {
+    btn.dataset.armed = '1';
+    btn.textContent = act === 'ban' ? '本当に停止する？' : act === 'unban' ? '本当に解除する？' : '本当に削除する？';
+    btn.style.background = '#c0392b'; btn.style.color = '#fff'; btn.style.borderColor = '#c0392b';
+    setTimeout(() => { if (btn.dataset.armed) location.reload(); }, 6000);
+    return;
+  }
   try {
     if (act === 'ban') {
       const reason = (document.getElementById('reason-' + uid).value || '').trim().slice(0, 200);
-      if (!confirm('このアカウントを利用停止にしますか？')) return;
       await db.collection('bans').doc(uid).set({ reason: reason, name: btn.getAttribute('data-name') || '', ts: firebase.firestore.FieldValue.serverTimestamp() });
     } else if (act === 'unban') {
-      if (!confirm('利用停止を解除しますか？')) return;
       await db.collection('bans').doc(uid).delete();
     } else if (act === 'delbest') {
-      if (!confirm('このアカウントのランキング記録（ベスト）を削除しますか？')) return;
       await db.collection('bests').doc(uid).delete();
     }
     loadData();
