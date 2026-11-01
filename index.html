@@ -357,6 +357,21 @@ function rankEsc(s) { return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','
 function myName() { try { return (localStorage.getItem('abc26_name') || '').trim().slice(0, 12); } catch (e) { return ''; } }
 function todayJST() { try { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date()); } catch (e) { return new Date().toISOString().slice(0, 10); } }
 function tsNow() { return new Date().toISOString(); }
+const BAD_WORDS = ['ちんこ','ちんちん','ちんぽ','まんこ','おっぱい','うんこ','うんち','セックス','せっくす','オナニー','おなにー','射精','しゃせい','レイプ','れいぷ','強姦','変態','へんたい','ヘンタイ','ポルノ','ぽるの','エロ','えろ','死ね','しね','あほ','アホ','ばか','バカ','きもい','キモい','うざい','fuck','shit','dick','cock','pussy','bitch','whore','slut','cunt','nigger','nigga','faggot','porn','penis','vagina','rape','boobs','tits','suck','asshole','bastard','hentai','sex',' 씨발','시발','병신','개새끼','좆','傻逼','操你','他妈的','妓女','妈的','puta','mierda','cabron','cono','merde','scheisse','arschloch'];
+let banInfo = undefined;
+function nameCleanClient(name) {
+  let t = (name || '').normalize('NFKC').toLowerCase()
+    .replace(/0/g, 'o').replace(/1/g, 'i').replace(/3/g, 'e').replace(/4/g, 'a').replace(/5/g, 's').replace(/7/g, 't').replace(/@/g, 'a').replace(/\$/g, 's')
+    .replace(/[\s_\-・.。!！?？'’"+=~〜|｜/\\*＊#＃]+/g, '');
+  return !BAD_WORDS.some(w => t.includes(w.normalize('NFKC').toLowerCase()));
+}
+async function checkBan() {
+  if (banInfo !== undefined) return banInfo;
+  try { const b = await fsGet('bans/' + myUid); banInfo = b ? { reason: (b.fields.reason && b.fields.reason.stringValue) || '' } : null; }
+  catch (e) { banInfo = null; }
+  return banInfo;
+}
+function banText(b) { return 'このアカウントは利用を停止されています' + (b && b.reason ? '（理由：' + b.reason + '）' : ''); }
 async function ensureAuth() {
   if (idToken && myUid) return true;
   let store = {};
@@ -420,6 +435,7 @@ async function syncPlayerName(name) {
 async function maybeSubmitBest(res) {
   const name = myName();
   if (!name) return 'noname';
+  if (!nameCleanClient(name)) return 'badname';
   const b = await fsGet('bests/' + myUid);
   let old = null;
   if (b) { const f = b.fields; old = { correct: parseInt(f.correct.integerValue, 10), wrong: parseInt(f.wrong.integerValue, 10), score: parseInt(f.score.integerValue, 10) }; }
@@ -436,10 +452,13 @@ async function submitResult() {
   pendingResult = { correct: score, wrong: wrong };
   msg.textContent = '記録中…';
   if (!await ensureAuth()) { msg.textContent = '通信エラーで記録できませんでした。'; return; }
+  const ban = await checkBan();
+  if (ban) { msg.textContent = banText(ban); rankShow(document.getElementById('rankList2')); return; }
   try { await recordUsage(); } catch (e) {}
   let st = 'error';
   try { st = await maybeSubmitBest(pendingResult); } catch (e) {}
   if (st === 'noname') msg.textContent = 'ニックネームを保存すると、ランキングに載るよ👇';
+  else if (st === 'badname') msg.textContent = 'そのニックネームは使えません。ちがう名前を保存してね👇';
   else if (st === 'updated') msg.textContent = '🏆 ベスト記録を更新したよ！';
   else if (st === 'notbetter') msg.textContent = '今回はベスト更新ならず。でも遊んだ記録は数えたよ！';
   else msg.textContent = '記録できませんでした。通信状態を確認してね。';
@@ -484,11 +503,14 @@ async function rankShow(el) {
 async function saveName(inputEl, msgEl) {
   const name = (inputEl.value || '').trim().slice(0, 12);
   if (!name) { msgEl.textContent = 'ニックネームを入力してね'; inputEl.focus(); return; }
+  if (!nameCleanClient(name)) { msgEl.textContent = 'そのニックネームは使えません。ちがう名前を考えてね'; inputEl.focus(); return; }
   try { localStorage.setItem('abc26_name', name); } catch (e) {}
   document.getElementById('nameInput1').value = name;
   document.getElementById('nameInput2').value = name;
   msgEl.textContent = '保存中…';
   if (!await ensureAuth()) { msgEl.textContent = '通信エラーで保存できませんでした'; return; }
+  const ban2 = await checkBan();
+  if (ban2) { msgEl.textContent = banText(ban2); return; }
   try {
     await syncPlayerName(name);
     msgEl.textContent = '✓ 保存しました';
