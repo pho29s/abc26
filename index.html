@@ -106,13 +106,16 @@
     <div id="gStart">
       <div class="q">音や名前を聞いて、合う文字をタップ！</div>
       <div style="text-align:center;font-size:14px;color:#8a7160;line-height:1.7;">
-        「名前」の問題と「音」の問題が半分ずつ出ます。<br>制限時間は60秒。外した文字は最後に復習できます。</div>
+        「名前」の問題と「音」の問題が半分ずつ出ます。<br>制限時間は60秒。外した文字は最後に復習できます。<br>※ K と J は「名前」の問題だけ出ます。</div>
       <button class="bigbtn" id="startBtn">▶ スタート</button>
       <button class="ghost" id="rankViewBtn">🏆 ランキングを見る</button>
     </div>
     <div id="gRank" style="display:none;">
       <div class="q">🏆 ランキング</div>
-      <div style="text-align:center;font-size:12.5px;color:#8a7160;">スコア ＝ 正解 − 不正解　／　同点のときは不正解が少ない方が上です</div>
+      <div style="text-align:center;font-size:12.5px;color:#8a7160;">スコア ＝ 正解 − 不正解　／　同点のときは不正解が少ない方が上です<br>1人につきベスト記録1つだけ。スコアが伸びたら自動で更新されます</div>
+      <input class="namein" id="nameInput1" maxlength="12" placeholder="ニックネーム（本名でなくてOK）">
+      <button class="ghost" id="nameSave1">ニックネームを保存</button>
+      <div class="msg" id="nameMsg1"></div>
       <div id="rankList1"></div>
       <button class="ghost" id="rankBackBtn">もどる</button>
     </div>
@@ -134,9 +137,9 @@
       <div style="text-align:center;font-size:19px;font-weight:800;" id="gFinal"></div>
       <div id="gScoreLine" style="text-align:center;font-size:15px;font-weight:700;margin-top:2px;"></div>
       <div id="gMiss"></div>
-      <input class="namein" id="rankName" maxlength="12" placeholder="ニックネーム（本名でなくてOK）">
-      <button class="bigbtn" id="rankSubmitBtn">🏆 ランキングに登録する</button>
       <div class="msg" id="rankMsg"></div>
+      <input class="namein" id="nameInput2" maxlength="12" placeholder="ニックネーム（本名でなくてOK）">
+      <button class="ghost" id="nameSave2">ニックネームを保存</button>
       <div id="rankList2"></div>
       <button class="bigbtn" id="retryBtn">もう一度</button>
     </div>
@@ -293,11 +296,10 @@ function pick(L) {
   document.getElementById('gStreak').textContent = streak;
 }
 function startGame() {
-  playing = true; score = 0; streak = 0; wrong = 0; misses = []; remain = 60; submitted = false;
+  playing = true; score = 0; streak = 0; wrong = 0; misses = []; remain = 60; pendingResult = null;
   document.getElementById('gWrong').textContent = '0';
   document.getElementById('rankMsg').textContent = '';
   document.getElementById('rankList2').innerHTML = '';
-  const sb = document.getElementById('rankSubmitBtn'); sb.disabled = false; sb.textContent = '🏆 ランキングに登録する';
   document.getElementById('gStart').style.display = 'none';
   document.getElementById('gEnd').style.display = 'none';
   document.getElementById('gPlay').style.display = 'block';
@@ -329,6 +331,7 @@ function endGame() {
   } else {
     box.innerHTML = '<div class="miss">全問クリア！ 弱い文字はありませんでした 🎉</div>';
   }
+  submitResult();
 }
 function stopGame() {
   if (playing) { playing = false; clearInterval(timerId); }
@@ -346,14 +349,105 @@ document.getElementById('shareBtn').onclick = async () => {
   } else { alert('このページのURLをコピーして送ってね'); }
 };
 
-/* ---------- RANKING (shared, Firestore) ---------- */
+/* ---------- ACCOUNT + RANKING (anonymous auth + Firestore) ---------- */
 const RANK_CFG = { projectId: 'abc26-ranking', apiKey: 'AIzaSyArAIuGkLCvOyCOGkXdh3sQWqjC8FSnnGU' };
-let submitted = false, myDocId = null;
-function rankReady() { return RANK_CFG.projectId.indexOf('__') !== 0 && RANK_CFG.apiKey.indexOf('__') !== 0; }
+const FS_BASE = 'https://firestore.googleapis.com/v1/projects/' + RANK_CFG.projectId + '/databases/(default)/documents';
+let myUid = null, idToken = null, pendingResult = null;
 function rankEsc(s) { return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function myName() { try { return (localStorage.getItem('abc26_name') || '').trim().slice(0, 12); } catch (e) { return ''; } }
+function todayJST() { try { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date()); } catch (e) { return new Date().toISOString().slice(0, 10); } }
+function tsNow() { return new Date().toISOString(); }
+async function ensureAuth() {
+  if (idToken && myUid) return true;
+  let store = {};
+  try { store = JSON.parse(localStorage.getItem('abc26_auth') || '{}'); } catch (e) {}
+  try {
+    if (store.rt) {
+      const r = await fetch('https://securetoken.googleapis.com/v1/token?key=' + RANK_CFG.apiKey, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(store.rt) });
+      if (r.ok) { const d = await r.json(); idToken = d.id_token; myUid = d.user_id; try { localStorage.setItem('abc26_auth', JSON.stringify({ rt: d.refresh_token || store.rt })); } catch (e) {} return true; }
+    }
+    const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=' + RANK_CFG.apiKey, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ returnSecureToken: true }) });
+    if (!r.ok) return false;
+    const d = await r.json(); idToken = d.idToken; myUid = d.localId;
+    try { localStorage.setItem('abc26_auth', JSON.stringify({ rt: d.refreshToken })); } catch (e) {}
+    return true;
+  } catch (e) { return false; }
+}
+function fsHeaders() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken }; }
+async function fsGet(path) {
+  const r = await fetch(FS_BASE + '/' + path + '?key=' + RANK_CFG.apiKey, { headers: fsHeaders() });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error('get ' + r.status);
+  return r.json();
+}
+async function fsCreatePlayer() {
+  const now = tsNow();
+  const body = { fields: { name: { stringValue: myName() }, createdAt: { timestampValue: now }, lastSeen: { timestampValue: now }, usage: { mapValue: { fields: {} } } } };
+  const r = await fetch(FS_BASE + '/players?documentId=' + myUid + '&key=' + RANK_CFG.apiKey, { method: 'POST', headers: fsHeaders(), body: JSON.stringify(body) });
+  if (!r.ok) throw new Error('create player ' + r.status);
+}
+async function recordUsage() {
+  const today = todayJST(); const now = tsNow();
+  const p = await fsGet('players/' + myUid);
+  if (!p) {
+    const body = { fields: { name: { stringValue: myName() }, createdAt: { timestampValue: now }, lastSeen: { timestampValue: now }, usage: { mapValue: { fields: { [today]: { integerValue: '1' } } } } } };
+    const r = await fetch(FS_BASE + '/players?documentId=' + myUid + '&key=' + RANK_CFG.apiKey, { method: 'POST', headers: fsHeaders(), body: JSON.stringify(body) });
+    if (!r.ok) throw new Error('create player ' + r.status);
+    return;
+  }
+  const uf = (((p.fields.usage || {}).mapValue || {}).fields) || {};
+  const cur = uf[today] ? parseInt(uf[today].integerValue, 10) : 0;
+  const body = { fields: { usage: { mapValue: { fields: { [today]: { integerValue: String(cur + 1) } } } }, lastSeen: { timestampValue: now } } };
+  const q = 'updateMask.fieldPaths=' + encodeURIComponent('usage.`' + today + '`') + '&updateMask.fieldPaths=lastSeen&key=' + RANK_CFG.apiKey;
+  const r = await fetch(FS_BASE + '/players/' + myUid + '?' + q, { method: 'PATCH', headers: fsHeaders(), body: JSON.stringify(body) });
+  if (!r.ok) throw new Error('usage ' + r.status);
+}
+async function syncPlayerName(name) {
+  const p = await fsGet('players/' + myUid);
+  if (!p) { await fsCreatePlayer(); }
+  const body = { fields: { name: { stringValue: name }, lastSeen: { timestampValue: tsNow() } } };
+  const q = 'updateMask.fieldPaths=name&updateMask.fieldPaths=lastSeen&key=' + RANK_CFG.apiKey;
+  const r = await fetch(FS_BASE + '/players/' + myUid + '?' + q, { method: 'PATCH', headers: fsHeaders(), body: JSON.stringify(body) });
+  if (!r.ok) throw new Error('name ' + r.status);
+  // ランキング表示名も合わせる（スコア自体は変えない）
+  const b = await fsGet('bests/' + myUid);
+  if (b && b.fields.name.stringValue !== name) {
+    const f = b.fields;
+    const bb = { fields: { name: { stringValue: name }, correct: f.correct, wrong: f.wrong, score: f.score, ts: f.ts } };
+    await fetch(FS_BASE + '/bests/' + myUid + '?key=' + RANK_CFG.apiKey, { method: 'PATCH', headers: fsHeaders(), body: JSON.stringify(bb) });
+  }
+}
+async function maybeSubmitBest(res) {
+  const name = myName();
+  if (!name) return 'noname';
+  const b = await fsGet('bests/' + myUid);
+  let old = null;
+  if (b) { const f = b.fields; old = { correct: parseInt(f.correct.integerValue, 10), wrong: parseInt(f.wrong.integerValue, 10), score: parseInt(f.score.integerValue, 10) }; }
+  const sc = res.correct - res.wrong;
+  const improved = !old || sc > old.score || (sc === old.score && res.wrong < old.wrong);
+  if (!improved) return 'notbetter';
+  const body = { fields: { name: { stringValue: name }, correct: { integerValue: String(res.correct) }, wrong: { integerValue: String(res.wrong) }, score: { integerValue: String(sc) }, ts: { timestampValue: tsNow() } } };
+  const r = await fetch(FS_BASE + '/bests/' + myUid + '?key=' + RANK_CFG.apiKey, { method: 'PATCH', headers: fsHeaders(), body: JSON.stringify(body) });
+  if (!r.ok) throw new Error('best ' + r.status);
+  return 'updated';
+}
+async function submitResult() {
+  const msg = document.getElementById('rankMsg');
+  pendingResult = { correct: score, wrong: wrong };
+  msg.textContent = '記録中…';
+  if (!await ensureAuth()) { msg.textContent = '通信エラーで記録できませんでした。'; return; }
+  try { await recordUsage(); } catch (e) {}
+  let st = 'error';
+  try { st = await maybeSubmitBest(pendingResult); } catch (e) {}
+  if (st === 'noname') msg.textContent = 'ニックネームを保存すると、ランキングに載るよ👇';
+  else if (st === 'updated') msg.textContent = '🏆 ベスト記録を更新したよ！';
+  else if (st === 'notbetter') msg.textContent = '今回はベスト更新ならず。でも遊んだ記録は数えたよ！';
+  else msg.textContent = '記録できませんでした。通信状態を確認してね。';
+  rankShow(document.getElementById('rankList2'));
+}
 async function rankFetch() {
   const url = 'https://firestore.googleapis.com/v1/projects/' + RANK_CFG.projectId + '/databases/(default)/documents:runQuery?key=' + RANK_CFG.apiKey;
-  const body = { structuredQuery: { from: [{ collectionId: 'scores' }], orderBy: [{ field: { fieldPath: 'score' }, direction: 'DESCENDING' }], limit: 100 } };
+  const body = { structuredQuery: { from: [{ collectionId: 'bests' }], orderBy: [{ field: { fieldPath: 'score' }, direction: 'DESCENDING' }], limit: 100 } };
   const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!r.ok) throw new Error('fetch ' + r.status);
   const rows = await r.json();
@@ -377,59 +471,50 @@ function rankRender(el, list) {
   if (!list.length) { el.innerHTML = '<div class="rank">まだ登録がありません。最初の1位を狙おう！</div>'; return; }
   const medals = ['🥇', '🥈', '🥉'];
   el.innerHTML = '<div class="rank">' + list.map((e, i) =>
-    '<div class="rrow' + (e.id === myDocId ? ' me' : '') + '"><span class="pos">' + (medals[i] || (i + 1) + '位') + '</span>' +
+    '<div class="rrow' + (e.id === myUid ? ' me' : '') + '"><span class="pos">' + (medals[i] || (i + 1) + '位') + '</span>' +
     '<span class="nm">' + rankEsc(e.name) + '</span>' +
     '<span class="dt">正解' + e.correct + '・ミス' + e.wrong + '</span>' +
     '<span class="sc">' + e.score + '点</span></div>').join('') + '</div>';
 }
 async function rankShow(el) {
   el.innerHTML = '<div class="rank">読み込み中…</div>';
-  if (!rankReady()) { el.innerHTML = '<div class="rank">ランキングは準備中です。</div>'; return; }
   try { rankRender(el, await rankFetch()); }
   catch (e) { el.innerHTML = '<div class="rank">読み込めませんでした。通信状態を確認して、もう一度開いてみてね。</div>'; }
 }
-async function rankSubmit() {
-  if (submitted) return;
-  const msg = document.getElementById('rankMsg');
-  if (!rankReady()) { msg.textContent = 'ランキングは準備中です'; return; }
-  const nameEl = document.getElementById('rankName');
-  let name = (nameEl.value || '').trim().slice(0, 12) || 'ゲスト';
+async function saveName(inputEl, msgEl) {
+  const name = (inputEl.value || '').trim().slice(0, 12);
+  if (!name) { msgEl.textContent = 'ニックネームを入力してね'; inputEl.focus(); return; }
   try { localStorage.setItem('abc26_name', name); } catch (e) {}
-  const btn = document.getElementById('rankSubmitBtn');
-  btn.disabled = true; btn.textContent = '登録中…';
-  const url = 'https://firestore.googleapis.com/v1/projects/' + RANK_CFG.projectId + '/databases/(default)/documents/scores?key=' + RANK_CFG.apiKey;
-  const body = { fields: {
-    name: { stringValue: name },
-    correct: { integerValue: String(score) },
-    wrong: { integerValue: String(wrong) },
-    score: { integerValue: String(score - wrong) },
-    ts: { timestampValue: new Date().toISOString() }
-  } };
+  document.getElementById('nameInput1').value = name;
+  document.getElementById('nameInput2').value = name;
+  msgEl.textContent = '保存中…';
+  if (!await ensureAuth()) { msgEl.textContent = '通信エラーで保存できませんでした'; return; }
   try {
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!r.ok) throw new Error('post ' + r.status);
-    const doc = await r.json();
-    myDocId = (doc.name || '').split('/').pop();
-    submitted = true;
-    btn.textContent = '登録しました ✓';
-    msg.textContent = '🏆 登録できたよ！';
-    rankShow(document.getElementById('rankList2'));
-  } catch (e) {
-    btn.disabled = false; btn.textContent = '🏆 ランキングに登録する';
-    msg.textContent = '登録できませんでした。通信状態を確認してもう一度押してね。';
-  }
+    await syncPlayerName(name);
+    msgEl.textContent = '✓ 保存しました';
+    if (pendingResult) {
+      const st = await maybeSubmitBest(pendingResult).catch(() => 'error');
+      const m2 = document.getElementById('rankMsg');
+      if (st === 'updated') m2.textContent = '🏆 ベスト記録を登録したよ！';
+      rankShow(document.getElementById('rankList2'));
+    }
+    rankShow(document.getElementById('rankList1'));
+  } catch (e) { msgEl.textContent = '保存できませんでした。通信状態を確認してね。'; }
 }
-document.getElementById('rankSubmitBtn').onclick = rankSubmit;
-document.getElementById('rankViewBtn').onclick = () => {
+document.getElementById('nameSave1').onclick = () => saveName(document.getElementById('nameInput1'), document.getElementById('nameMsg1'));
+document.getElementById('nameSave2').onclick = () => saveName(document.getElementById('nameInput2'), document.getElementById('rankMsg'));
+document.getElementById('rankViewBtn').onclick = async () => {
   document.getElementById('gStart').style.display = 'none';
   document.getElementById('gRank').style.display = 'block';
+  await ensureAuth();
   rankShow(document.getElementById('rankList1'));
 };
 document.getElementById('rankBackBtn').onclick = () => {
   document.getElementById('gRank').style.display = 'none';
   document.getElementById('gStart').style.display = 'block';
 };
-try { document.getElementById('rankName').value = localStorage.getItem('abc26_name') || ''; } catch (e) {}
+try { const n = localStorage.getItem('abc26_name') || ''; document.getElementById('nameInput1').value = n; document.getElementById('nameInput2').value = n; } catch (e) {}
+
 document.getElementById('startBtn').onclick = startGame;
 document.getElementById('retryBtn').onclick = startGame;
 document.getElementById('againBtn').onclick = () => {
