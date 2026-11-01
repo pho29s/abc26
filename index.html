@@ -255,6 +255,7 @@ function ask() {
   locked = false;
   target = LETTERS[Math.floor(Math.random() * LETTERS.length)];
   qType = Math.random() < 0.5 ? 'name' : 'sound';
+  if (target.letter === 'k') qType = 'name'; // Kは名前の問題のみ出題（指定仕様）
   document.getElementById('gMsg').textContent = '';
   if (qType === 'name') {
     targetSound = null;
