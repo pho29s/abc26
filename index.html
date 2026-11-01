@@ -70,6 +70,15 @@
     .playrow button { font-size:11px; padding:12px 1px; overflow:hidden; }
     .playrow button.namebtn { flex:1.6; }
   }
+  .rank { background:#fff; border:2px solid #f0dcc2; border-radius:12px; padding:10px 12px; margin-top:10px; text-align:left; }
+  .rank .rrow { display:flex; gap:6px; padding:5px 2px; border-bottom:1px dashed #eee0cc; font-size:14.5px; align-items:baseline; }
+  .rank .rrow:last-child { border-bottom:none; }
+  .rank .rrow.me { background:#fff1e6; border-radius:8px; font-weight:800; }
+  .rank .pos { width:2em; text-align:right; font-weight:800; color:#e4572e; flex:none; }
+  .rank .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rank .sc { flex:none; font-weight:800; }
+  .rank .dt { flex:none; color:#a68a70; font-size:12px; }
+  .namein { width:100%; border:2px solid #e8cfa8; border-radius:10px; padding:11px; font-size:15px; margin-top:8px; background:#fff; color:#3a2c22; }
   .next { background:#fff; border:2px dashed #e8cfa8; border-radius:12px; padding:10px 14px; margin-top:12px;
           font-size:13px; color:#7a5a3e; text-align:center; line-height:1.6; }
 </style>
@@ -99,12 +108,20 @@
       <div style="text-align:center;font-size:14px;color:#8a7160;line-height:1.7;">
         「名前」の問題と「音」の問題が半分ずつ出ます。<br>制限時間は60秒。外した文字は最後に復習できます。</div>
       <button class="bigbtn" id="startBtn">▶ スタート</button>
+      <button class="ghost" id="rankViewBtn">🏆 ランキングを見る</button>
+    </div>
+    <div id="gRank" style="display:none;">
+      <div class="q">🏆 ランキング</div>
+      <div style="text-align:center;font-size:12.5px;color:#8a7160;">スコア ＝ 正解 − 不正解　／　同点のときは不正解が少ない方が上です</div>
+      <div id="rankList1"></div>
+      <button class="ghost" id="rankBackBtn">もどる</button>
     </div>
     <div id="gPlay" style="display:none;">
       <div class="hud">
         <div class="box"><div class="num" id="gTime">60</div><div class="lab">のこり秒</div></div>
         <div class="box"><div class="num" id="gScore">0</div><div class="lab">正解</div></div>
         <div class="box"><div class="num" id="gStreak">0</div><div class="lab">れんぞく</div></div>
+        <div class="box"><div class="num" id="gWrong">0</div><div class="lab">ミス</div></div>
       </div>
       <div class="bar"><div id="gBar"></div></div>
       <div class="q" id="gQ">聞こえたのは？</div>
@@ -115,7 +132,12 @@
     <div id="gEnd" style="display:none;">
       <div class="q">⏱ 終了！</div>
       <div style="text-align:center;font-size:19px;font-weight:800;" id="gFinal"></div>
+      <div id="gScoreLine" style="text-align:center;font-size:15px;font-weight:700;margin-top:2px;"></div>
       <div id="gMiss"></div>
+      <input class="namein" id="rankName" maxlength="12" placeholder="ニックネーム（本名でなくてOK）">
+      <button class="bigbtn" id="rankSubmitBtn">🏆 ランキングに登録する</button>
+      <div class="msg" id="rankMsg"></div>
+      <div id="rankList2"></div>
       <button class="bigbtn" id="retryBtn">もう一度</button>
     </div>
   </div>
@@ -215,7 +237,7 @@ LETTERS.forEach(L => {
   t.onclick = () => pick(L);
   gGrid.appendChild(t);
 });
-let playing = false, remain = 60, score = 0, streak = 0, misses = [], timerId = null, target = null, targetSound = null, qType = 'sound', locked = false;
+let playing = false, remain = 60, score = 0, streak = 0, wrong = 0, misses = [], timerId = null, target = null, targetSound = null, qType = 'sound', locked = false;
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 const NAMES = {a:'ay',b:'bee',c:'cee',d:'dee',e:'ee',f:'ef',g:'gee',h:'aitch',i:'eye',j:'jay',k:'kay',l:'el',m:'em',n:'en',o:'oh',p:'pee',q:'cue',r:'ar',s:'ess',t:'tee',u:'you',v:'vee',w:'double you',x:'ex',y:'why',z:'zee'};
 function playName(L) {
@@ -259,7 +281,8 @@ function pick(L) {
     document.getElementById('gMsg').textContent = '⭕ ' + target.letter.toUpperCase() + '！';
     setTimeout(() => { t.classList.remove('good'); ask(); }, 650);
   } else {
-    streak = 0;
+    streak = 0; wrong++;
+    document.getElementById('gWrong').textContent = wrong;
     t.classList.add('bad', 'dim');
     if (!misses.includes(target.letter)) misses.push(target.letter);
     document.getElementById('gMsg').textContent = '❌ ちがうよ、もう一度！';
@@ -269,7 +292,11 @@ function pick(L) {
   document.getElementById('gStreak').textContent = streak;
 }
 function startGame() {
-  playing = true; score = 0; streak = 0; misses = []; remain = 60;
+  playing = true; score = 0; streak = 0; wrong = 0; misses = []; remain = 60; submitted = false;
+  document.getElementById('gWrong').textContent = '0';
+  document.getElementById('rankMsg').textContent = '';
+  document.getElementById('rankList2').innerHTML = '';
+  const sb = document.getElementById('rankSubmitBtn'); sb.disabled = false; sb.textContent = '🏆 ランキングに登録する';
   document.getElementById('gStart').style.display = 'none';
   document.getElementById('gEnd').style.display = 'none';
   document.getElementById('gPlay').style.display = 'block';
@@ -291,6 +318,7 @@ function endGame() {
   document.getElementById('gPlay').style.display = 'none';
   document.getElementById('gEnd').style.display = 'block';
   document.getElementById('gFinal').textContent = '60秒で ' + score + ' 問正解！';
+  document.getElementById('gScoreLine').textContent = '正解 ' + score + ' ・ 不正解 ' + wrong + ' ・ スコア ' + (score - wrong);
   const box = document.getElementById('gMiss');
   if (misses.length) {
     box.innerHTML = '<div class="miss"><b>復習リスト（弱い文字）</b>' + misses.map(k => {
@@ -316,6 +344,91 @@ document.getElementById('shareBtn').onclick = async () => {
     catch (e) { alert('このページのURLをコピーして送ってね'); }
   } else { alert('このページのURLをコピーして送ってね'); }
 };
+
+/* ---------- RANKING (shared, Firestore) ---------- */
+const RANK_CFG = { projectId: 'abc26-ranking', apiKey: 'AIzaSyArAIuGkLCvOyCOGkXdh3sQWqjC8FSnnGU' };
+let submitted = false, myDocId = null;
+function rankReady() { return RANK_CFG.projectId.indexOf('__') !== 0 && RANK_CFG.apiKey.indexOf('__') !== 0; }
+function rankEsc(s) { return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+async function rankFetch() {
+  const url = 'https://firestore.googleapis.com/v1/projects/' + RANK_CFG.projectId + '/databases/(default)/documents:runQuery?key=' + RANK_CFG.apiKey;
+  const body = { structuredQuery: { from: [{ collectionId: 'scores' }], orderBy: [{ field: { fieldPath: 'score' }, direction: 'DESCENDING' }], limit: 100 } };
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error('fetch ' + r.status);
+  const rows = await r.json();
+  const list = [];
+  rows.forEach(row => {
+    if (!row.document) return;
+    const f = row.document.fields || {};
+    list.push({
+      id: row.document.name.split('/').pop(),
+      name: (f.name && f.name.stringValue) || 'ゲスト',
+      correct: parseInt((f.correct && f.correct.integerValue) || '0', 10),
+      wrong: parseInt((f.wrong && f.wrong.integerValue) || '0', 10),
+      score: parseInt((f.score && f.score.integerValue) || '0', 10),
+      ts: (f.ts && f.ts.timestampValue) || ''
+    });
+  });
+  list.sort((a, b) => (b.score - a.score) || (a.wrong - b.wrong) || (a.ts < b.ts ? -1 : 1));
+  return list.slice(0, 50);
+}
+function rankRender(el, list) {
+  if (!list.length) { el.innerHTML = '<div class="rank">まだ登録がありません。最初の1位を狙おう！</div>'; return; }
+  const medals = ['🥇', '🥈', '🥉'];
+  el.innerHTML = '<div class="rank">' + list.map((e, i) =>
+    '<div class="rrow' + (e.id === myDocId ? ' me' : '') + '"><span class="pos">' + (medals[i] || (i + 1) + '位') + '</span>' +
+    '<span class="nm">' + rankEsc(e.name) + '</span>' +
+    '<span class="dt">正解' + e.correct + '・ミス' + e.wrong + '</span>' +
+    '<span class="sc">' + e.score + '点</span></div>').join('') + '</div>';
+}
+async function rankShow(el) {
+  el.innerHTML = '<div class="rank">読み込み中…</div>';
+  if (!rankReady()) { el.innerHTML = '<div class="rank">ランキングは準備中です。</div>'; return; }
+  try { rankRender(el, await rankFetch()); }
+  catch (e) { el.innerHTML = '<div class="rank">読み込めませんでした。通信状態を確認して、もう一度開いてみてね。</div>'; }
+}
+async function rankSubmit() {
+  if (submitted) return;
+  const msg = document.getElementById('rankMsg');
+  if (!rankReady()) { msg.textContent = 'ランキングは準備中です'; return; }
+  const nameEl = document.getElementById('rankName');
+  let name = (nameEl.value || '').trim().slice(0, 12) || 'ゲスト';
+  try { localStorage.setItem('abc26_name', name); } catch (e) {}
+  const btn = document.getElementById('rankSubmitBtn');
+  btn.disabled = true; btn.textContent = '登録中…';
+  const url = 'https://firestore.googleapis.com/v1/projects/' + RANK_CFG.projectId + '/databases/(default)/documents/scores?key=' + RANK_CFG.apiKey;
+  const body = { fields: {
+    name: { stringValue: name },
+    correct: { integerValue: String(score) },
+    wrong: { integerValue: String(wrong) },
+    score: { integerValue: String(score - wrong) },
+    ts: { timestampValue: new Date().toISOString() }
+  } };
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error('post ' + r.status);
+    const doc = await r.json();
+    myDocId = (doc.name || '').split('/').pop();
+    submitted = true;
+    btn.textContent = '登録しました ✓';
+    msg.textContent = '🏆 登録できたよ！';
+    rankShow(document.getElementById('rankList2'));
+  } catch (e) {
+    btn.disabled = false; btn.textContent = '🏆 ランキングに登録する';
+    msg.textContent = '登録できませんでした。通信状態を確認してもう一度押してね。';
+  }
+}
+document.getElementById('rankSubmitBtn').onclick = rankSubmit;
+document.getElementById('rankViewBtn').onclick = () => {
+  document.getElementById('gStart').style.display = 'none';
+  document.getElementById('gRank').style.display = 'block';
+  rankShow(document.getElementById('rankList1'));
+};
+document.getElementById('rankBackBtn').onclick = () => {
+  document.getElementById('gRank').style.display = 'none';
+  document.getElementById('gStart').style.display = 'block';
+};
+try { document.getElementById('rankName').value = localStorage.getItem('abc26_name') || ''; } catch (e) {}
 document.getElementById('startBtn').onclick = startGame;
 document.getElementById('retryBtn').onclick = startGame;
 document.getElementById('againBtn').onclick = () => {
