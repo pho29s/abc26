@@ -112,7 +112,7 @@
     </div>
     <div id="gRank" style="display:none;">
       <div class="q">🏆 ランキング</div>
-      <div style="text-align:center;font-size:12.5px;color:#8a7160;">スコア ＝ 正解 − 不正解　／　同点のときは不正解が少ない方が上です<br>1人につきベスト記録1つだけ。スコアが伸びたら自動で更新されます</div>
+      <div style="text-align:center;font-size:12.5px;color:#8a7160;">スコア ＝ 正解 − 不正解　／　同点のときは不正解が少ない方が上です<br>1人につきベスト記録1つだけ。スコアが伸びたら自動で更新されます<br>ニックネームは早い者勝ち。同じ名前は他の人は使えません</div>
       <input class="namein" id="nameInput1" maxlength="12" placeholder="ニックネーム（本名でなくてOK）">
       <button class="ghost" id="nameSave1">ニックネームを保存</button>
       <div class="msg" id="nameMsg1"></div>
@@ -359,6 +359,13 @@ function todayJST() { try { return new Intl.DateTimeFormat('sv-SE', { timeZone: 
 function tsNow() { return new Date().toISOString(); }
 const BAD_WORDS = ['ちんこ','ちんちん','ちんぽ','まんこ','おっぱい','うんこ','うんち','セックス','せっくす','オナニー','おなにー','射精','しゃせい','レイプ','れいぷ','強姦','変態','へんたい','ヘンタイ','ポルノ','ぽるの','エロ','えろ','死ね','しね','あほ','アホ','ばか','バカ','きもい','キモい','うざい','fuck','shit','dick','cock','pussy','bitch','whore','slut','cunt','nigger','nigga','faggot','porn','penis','vagina','rape','boobs','tits','suck','asshole','bastard','hentai','sex',' 씨발','시발','병신','개새끼','좆','傻逼','操你','他妈的','妓女','妈的','puta','mierda','cabron','cono','merde','scheisse','arschloch'];
 let banInfo = undefined;
+function nameNorm(name) {
+  let t = (name || '').normalize('NFKC').toLowerCase()
+    .replace(/0/g, 'o').replace(/1/g, 'i').replace(/3/g, 'e').replace(/4/g, 'a').replace(/5/g, 's').replace(/7/g, 't').replace(/@/g, 'a').replace(/\$/g, 's')
+    .replace(/[\s_\-・.。!！?？'’"+=~〜|｜/\\*＊#＃]+/g, '');
+  if (!t) { let h = 0; const s = String(name || ''); for (let i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) >>> 0; } t = 'sym' + h.toString(36); }
+  return t;
+}
 function nameCleanClient(name) {
   let t = (name || '').normalize('NFKC').toLowerCase()
     .replace(/0/g, 'o').replace(/1/g, 'i').replace(/3/g, 'e').replace(/4/g, 'a').replace(/5/g, 's').replace(/7/g, 't').replace(/@/g, 'a').replace(/\$/g, 's')
@@ -372,6 +379,33 @@ async function checkBan() {
   return banInfo;
 }
 function banText(b) { return 'このアカウントは利用を停止されています' + (b && b.reason ? '（理由：' + b.reason + '）' : ''); }
+let claimedKey = null, takenName = null;
+async function claimName(name) {
+  const key = nameNorm(name);
+  if (claimedKey === key) return 'ok';
+  if (takenName === name) return 'taken';
+  try {
+    const doc = await fsGet('names/' + encodeURIComponent(key));
+    if (doc) {
+      const owner = doc.fields && doc.fields.uid && doc.fields.uid.stringValue;
+      if (owner === myUid) { claimedKey = key; return 'ok'; }
+      takenName = name; return 'taken';
+    }
+    const body = { fields: { uid: { stringValue: myUid }, name: { stringValue: name }, ts: { timestampValue: tsNow() } } };
+    const r = await fetch(FS_BASE + '/names?documentId=' + encodeURIComponent(key) + '&key=' + RANK_CFG.apiKey, { method: 'POST', headers: fsHeaders(), body: JSON.stringify(body) });
+    if (r.ok) { claimedKey = key; return 'ok'; }
+    const doc2 = await fsGet('names/' + encodeURIComponent(key));
+    if (doc2) {
+      const owner2 = doc2.fields && doc2.fields.uid && doc2.fields.uid.stringValue;
+      if (owner2 === myUid) { claimedKey = key; return 'ok'; }
+      takenName = name; return 'taken';
+    }
+    return 'error';
+  } catch (e) { return 'error'; }
+}
+function releaseName(name) {
+  fetch(FS_BASE + '/names/' + encodeURIComponent(nameNorm(name)) + '?key=' + RANK_CFG.apiKey, { method: 'DELETE', headers: fsHeaders() }).catch(() => {});
+}
 async function ensureAuth() {
   if (idToken && myUid) return true;
   let store = {};
@@ -455,6 +489,11 @@ async function submitResult() {
   const ban = await checkBan();
   if (ban) { msg.textContent = banText(ban); rankShow(document.getElementById('rankList2')); return; }
   try { await recordUsage(); } catch (e) {}
+  const nm0 = myName();
+  if (nm0 && nameCleanClient(nm0)) {
+    const c0 = await claimName(nm0);
+    if (c0 === 'taken') { msg.textContent = 'その名前は他の人が使っています。ニックネームを変えてね👇'; rankShow(document.getElementById('rankList2')); return; }
+  }
   let st = 'error';
   try { st = await maybeSubmitBest(pendingResult); } catch (e) {}
   if (st === 'noname') msg.textContent = 'ニックネームを保存すると、ランキングに載るよ👇';
@@ -504,15 +543,20 @@ async function saveName(inputEl, msgEl) {
   const name = (inputEl.value || '').trim().slice(0, 12);
   if (!name) { msgEl.textContent = 'ニックネームを入力してね'; inputEl.focus(); return; }
   if (!nameCleanClient(name)) { msgEl.textContent = 'そのニックネームは使えません。ちがう名前を考えてね'; inputEl.focus(); return; }
-  try { localStorage.setItem('abc26_name', name); } catch (e) {}
-  document.getElementById('nameInput1').value = name;
-  document.getElementById('nameInput2').value = name;
   msgEl.textContent = '保存中…';
   if (!await ensureAuth()) { msgEl.textContent = '通信エラーで保存できませんでした'; return; }
   const ban2 = await checkBan();
   if (ban2) { msgEl.textContent = banText(ban2); return; }
+  const oldName = myName();
+  const cc = await claimName(name);
+  if (cc === 'taken') { msgEl.textContent = 'その名前は、すでに他の人が使っています。ちがう名前を考えてね'; inputEl.focus(); return; }
+  if (cc === 'error') { msgEl.textContent = '通信エラーで保存できませんでした'; return; }
+  try { localStorage.setItem('abc26_name', name); } catch (e) {}
+  document.getElementById('nameInput1').value = name;
+  document.getElementById('nameInput2').value = name;
   try {
     await syncPlayerName(name);
+    if (oldName && oldName !== name) releaseName(oldName);
     msgEl.textContent = '✓ 保存しました';
     if (pendingResult) {
       const st = await maybeSubmitBest(pendingResult).catch(() => 'error');
