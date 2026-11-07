@@ -81,6 +81,9 @@
   .namein { width:100%; border:2px solid #e8cfa8; border-radius:10px; padding:11px; font-size:15px; margin-top:8px; background:#fff; color:#3a2c22; }
   .next { background:#fff; border:2px dashed #e8cfa8; border-radius:12px; padding:10px 14px; margin-top:12px;
           font-size:13px; color:#7a5a3e; text-align:center; line-height:1.6; }
+  #confettiCv { position:fixed; inset:0; width:100%; height:100%; pointer-events:none; z-index:9999; }
+  .yay { animation: yayPop .65s ease; }
+  @keyframes yayPop { 0% { transform:scale(1); } 35% { transform:scale(1.22); } 100% { transform:scale(1); } }
 </style>
 </head>
 <body>
@@ -193,6 +196,47 @@ function playSE(good) {
     if (good) { seTone(1318.5, 'sine', 0, 0.14, 0.22); seTone(1568, 'sine', 0.09, 0.28, 0.22); }
     else { seTone(147, 'sawtooth', 0, 0.11, 0.16); seTone(147, 'sawtooth', 0.15, 0.2, 0.16); }
   } catch (e) {}
+}
+/* お祝い：ファンファーレ＋紙吹雪（ベスト更新・ポイント獲得のとき） */
+function playFanfare() {
+  try {
+    if (!seCtx) seCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (seCtx.state === 'suspended') seCtx.resume();
+    [[523.25, 0], [659.25, 0.09], [783.99, 0.18], [1046.5, 0.27]].forEach(n => seTone(n[0], 'triangle', n[1], 0.32, 0.22));
+    seTone(1318.5, 'sine', 0.27, 0.42, 0.13);
+    [523.25, 659.25, 783.99, 1046.5].forEach(f => seTone(f, 'triangle', 0.4, 0.6, 0.1));
+  } catch (e) {}
+}
+function launchConfetti(n) {
+  const cv = document.getElementById('confettiCv');
+  if (!cv || !cv.getContext) return;
+  const ctx = cv.getContext('2d');
+  cv.width = window.innerWidth; cv.height = window.innerHeight;
+  const colors = ['#ef5350', '#ffa726', '#ffee58', '#66bb6a', '#42a5f5', '#ab47bc', '#ffd700'];
+  const ps = [];
+  for (let i = 0; i < n; i++) {
+    ps.push({ x: Math.random() * cv.width, y: -20 - Math.random() * cv.height * 0.35, w: 6 + Math.random() * 6, h: 8 + Math.random() * 8, vy: 2.2 + Math.random() * 2.6, vx: -1.2 + Math.random() * 2.4, rot: Math.random() * Math.PI, vr: -0.12 + Math.random() * 0.24, color: colors[i % colors.length], ph: Math.random() * Math.PI * 2 });
+  }
+  const t0 = performance.now();
+  (function frame(now) {
+    const el = now - t0;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    let alive = false;
+    for (const p of ps) {
+      p.y += p.vy; p.x += p.vx + Math.sin(el / 160 + p.ph) * 0.9; p.rot += p.vr;
+      if (p.y >= cv.height + 30) continue;
+      alive = true;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.color; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore();
+    }
+    if (alive && el < 4200) requestAnimationFrame(frame);
+    else ctx.clearRect(0, 0, cv.width, cv.height);
+  })(t0);
+}
+function celebrate(big) {
+  playFanfare();
+  launchConfetti(big ? 170 : 110);
+  const gf = document.getElementById('gFinal');
+  if (gf) { gf.classList.remove('yay'); void gf.offsetWidth; gf.classList.add('yay'); }
 }
 function speakName(L) {
   if (AUDIO['name_' + L.letter]) { playKey('name_' + L.letter); return; }
@@ -559,7 +603,7 @@ async function submitResult() {
   const nm0 = myName();
   if (nm0 && nameCleanClient(nm0)) {
     const c0 = await claimName(nm0);
-    if (c0 === 'taken') { msg.textContent = 'その名前は他の人が使っています。ニックネームを変えてね👇'; rankShow(document.getElementById('rankList2')); return; }
+    if (c0 === 'taken') { msg.textContent = 'その名前は他の人が使っています。ニックネームを変えてね👇'; if (ptRes && ptRes.awarded) celebrate(false); rankShow(document.getElementById('rankList2')); return; }
   }
   let st = 'error';
   try { st = await maybeSubmitBest(pendingResult); } catch (e) {}
@@ -568,6 +612,8 @@ async function submitResult() {
   else if (st === 'updated') msg.textContent = '🏆 ベスト記録を更新したよ！';
   else if (st === 'notbetter') msg.textContent = '今回はベスト更新ならず。でも遊んだ記録は数えたよ！';
   else msg.textContent = '記録できませんでした。通信状態を確認してね。';
+  const gotPt = !!(ptRes && ptRes.awarded);
+  if (st === 'updated' || gotPt) celebrate(st === 'updated' && gotPt);
   rankShow(document.getElementById('rankList2'));
 }
 async function rankFetch() {
@@ -628,7 +674,7 @@ async function saveName(inputEl, msgEl) {
     if (pendingResult) {
       const st = await maybeSubmitBest(pendingResult).catch(() => 'error');
       const m2 = document.getElementById('rankMsg');
-      if (st === 'updated') m2.textContent = '🏆 ベスト記録を登録したよ！';
+      if (st === 'updated') { m2.textContent = '🏆 ベスト記録を登録したよ！'; celebrate(false); }
       rankShow(document.getElementById('rankList2'));
     }
     rankShow(document.getElementById('rankList1'));
@@ -656,5 +702,6 @@ document.getElementById('againBtn').onclick = () => {
   else playKey(targetSound);
 };
 </script>
+<canvas id="confettiCv"></canvas>
 </body>
 </html>
