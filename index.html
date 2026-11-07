@@ -106,13 +106,15 @@
     <div id="gStart">
       <div class="q">音や名前を聞いて、合う文字をタップ！</div>
       <div style="text-align:center;font-size:14px;color:#8a7160;line-height:1.7;">
-        「名前」の問題と「音」の問題が半分ずつ出ます。<br>制限時間は60秒。外した文字は最後に復習できます。<br>※ K と J は「名前」の問題だけ出ます。</div>
+        「名前」の問題と「音」の問題が半分ずつ出ます。<br>制限時間は60秒。外した文字は最後に復習できます。<br>※ K と J は「名前」の問題だけ出ます。<br>⭐ 1回のタイムアタックで<b>10問以上正解</b>すると、<b>1ポイント</b>もらえます。</div>
       <button class="bigbtn" id="startBtn">▶ スタート</button>
       <button class="ghost" id="rankViewBtn">🏆 ランキングを見る</button>
+      <div class="msg myPoints"></div>
     </div>
     <div id="gRank" style="display:none;">
       <div class="q">🏆 ランキング</div>
       <div style="text-align:center;font-size:12.5px;color:#8a7160;">スコア ＝ 正解 − 不正解　／　同点のときは不正解が少ない方が上です<br>1人につきベスト記録1つだけ。スコアが伸びたら自動で更新されます<br>ニックネームは早い者勝ち。同じ名前は他の人は使えません</div>
+      <div class="msg myPoints"></div>
       <input class="namein" id="nameInput1" maxlength="12" placeholder="ニックネーム（本名でなくてOK）">
       <button class="ghost" id="nameSave1">ニックネームを保存</button>
       <div class="msg" id="nameMsg1"></div>
@@ -136,6 +138,7 @@
       <div class="q">⏱ 終了！</div>
       <div style="text-align:center;font-size:19px;font-weight:800;" id="gFinal"></div>
       <div id="gScoreLine" style="text-align:center;font-size:15px;font-weight:700;margin-top:2px;"></div>
+      <div id="pointLine" style="text-align:center;font-size:15px;font-weight:800;margin-top:4px;color:#b8860b;"></div>
       <div id="gMiss"></div>
       <div class="msg" id="rankMsg"></div>
       <input class="namein" id="nameInput2" maxlength="12" placeholder="ニックネーム（本名でなくてOK）">
@@ -226,7 +229,7 @@ function setMode(game) {
   mGame.classList.toggle('on', game);
   document.getElementById('learn').style.display = game ? 'none' : 'block';
   document.getElementById('game').style.display = game ? 'block' : 'none';
-  if (game) stopGame();
+  if (game) { stopGame(); fetchMyPoints(); }
 }
 mLearn.onclick = () => setMode(false);
 mGame.onclick = () => setMode(true);
@@ -322,6 +325,7 @@ function endGame() {
   document.getElementById('gEnd').style.display = 'block';
   document.getElementById('gFinal').textContent = '60秒で ' + score + ' 問正解！';
   document.getElementById('gScoreLine').textContent = '正解 ' + score + ' ・ 不正解 ' + wrong + ' ・ スコア ' + (score - wrong);
+  document.getElementById('pointLine').textContent = score >= 10 ? '⭐ 10問以上正解！ 1ポイント獲得（記録中…）' : '⭐ ポイントまで あと ' + (10 - score) + ' 問（10問以上正解で1ポイント）';
   const box = document.getElementById('gMiss');
   if (misses.length) {
     box.innerHTML = '<div class="miss"><b>復習リスト（弱い文字）</b>' + misses.map(k => {
@@ -431,25 +435,53 @@ async function fsGet(path) {
 }
 async function fsCreatePlayer() {
   const now = tsNow();
-  const body = { fields: { name: { stringValue: myName() }, createdAt: { timestampValue: now }, lastSeen: { timestampValue: now }, usage: { mapValue: { fields: {} } } } };
+  const body = { fields: { name: { stringValue: myName() }, createdAt: { timestampValue: now }, lastSeen: { timestampValue: now }, usage: { mapValue: { fields: {} } }, points: { integerValue: '0' } } };
   const r = await fetch(FS_BASE + '/players?documentId=' + myUid + '&key=' + RANK_CFG.apiKey, { method: 'POST', headers: fsHeaders(), body: JSON.stringify(body) });
   if (!r.ok) throw new Error('create player ' + r.status);
 }
-async function recordUsage() {
+let myPointsTotal = null;
+function pointsOf(p) { return (p && p.fields && p.fields.points && p.fields.points.integerValue) ? parseInt(p.fields.points.integerValue, 10) : 0; }
+function renderMyPoints() {
+  if (myPointsTotal === null) return;
+  document.querySelectorAll('.myPoints').forEach(el => { el.textContent = '⭐ あなたのポイント：' + myPointsTotal; });
+}
+async function fetchMyPoints() {
+  try {
+    if (!await ensureAuth()) return;
+    const p = await fsGet('players/' + myUid);
+    myPointsTotal = pointsOf(p);
+    renderMyPoints();
+  } catch (e) {}
+}
+async function recordUsage(earnedPoint) {
   const today = todayJST(); const now = tsNow();
   const p = await fsGet('players/' + myUid);
   if (!p) {
-    const body = { fields: { name: { stringValue: myName() }, createdAt: { timestampValue: now }, lastSeen: { timestampValue: now }, usage: { mapValue: { fields: { [today]: { integerValue: '1' } } } } } };
+    const body = { fields: { name: { stringValue: myName() }, createdAt: { timestampValue: now }, lastSeen: { timestampValue: now }, usage: { mapValue: { fields: { [today]: { integerValue: '1' } } } }, points: { integerValue: '0' } } };
     const r = await fetch(FS_BASE + '/players?documentId=' + myUid + '&key=' + RANK_CFG.apiKey, { method: 'POST', headers: fsHeaders(), body: JSON.stringify(body) });
     if (!r.ok) throw new Error('create player ' + r.status);
-    return;
+    let pts = 0;
+    if (earnedPoint) {
+      const b2 = { fields: { points: { integerValue: '1' } } };
+      const r2 = await fetch(FS_BASE + '/players/' + myUid + '?updateMask.fieldPaths=points&key=' + RANK_CFG.apiKey, { method: 'PATCH', headers: fsHeaders(), body: JSON.stringify(b2) });
+      if (!r2.ok) throw new Error('points ' + r2.status);
+      pts = 1;
+    }
+    myPointsTotal = pts; renderMyPoints();
+    return pts;
   }
   const uf = (((p.fields.usage || {}).mapValue || {}).fields) || {};
   const cur = uf[today] ? parseInt(uf[today].integerValue, 10) : 0;
-  const body = { fields: { usage: { mapValue: { fields: { [today]: { integerValue: String(cur + 1) } } } }, lastSeen: { timestampValue: now } } };
-  const q = 'updateMask.fieldPaths=' + encodeURIComponent('usage.`' + today + '`') + '&updateMask.fieldPaths=lastSeen&key=' + RANK_CFG.apiKey;
-  const r = await fetch(FS_BASE + '/players/' + myUid + '?' + q, { method: 'PATCH', headers: fsHeaders(), body: JSON.stringify(body) });
+  const curPts = pointsOf(p);
+  const newPts = earnedPoint ? curPts + 1 : curPts;
+  const fields = { usage: { mapValue: { fields: { [today]: { integerValue: String(cur + 1) } } } }, lastSeen: { timestampValue: now } };
+  let q = 'updateMask.fieldPaths=' + encodeURIComponent('usage.`' + today + '`') + '&updateMask.fieldPaths=lastSeen';
+  if (earnedPoint) { fields.points = { integerValue: String(newPts) }; q += '&updateMask.fieldPaths=points'; }
+  q += '&key=' + RANK_CFG.apiKey;
+  const r = await fetch(FS_BASE + '/players/' + myUid + '?' + q, { method: 'PATCH', headers: fsHeaders(), body: JSON.stringify({ fields }) });
   if (!r.ok) throw new Error('usage ' + r.status);
+  myPointsTotal = newPts; renderMyPoints();
+  return newPts;
 }
 async function syncPlayerName(name) {
   const p = await fsGet('players/' + myUid);
@@ -487,8 +519,14 @@ async function submitResult() {
   msg.textContent = '記録中…';
   if (!await ensureAuth()) { msg.textContent = '通信エラーで記録できませんでした。'; return; }
   const ban = await checkBan();
-  if (ban) { msg.textContent = banText(ban); rankShow(document.getElementById('rankList2')); return; }
-  try { await recordUsage(); } catch (e) {}
+  if (ban) { msg.textContent = banText(ban); document.getElementById('pointLine').textContent = ''; rankShow(document.getElementById('rankList2')); return; }
+  const earned = pendingResult.correct >= 10;
+  let totalPts = null;
+  try { totalPts = await recordUsage(earned); } catch (e) {}
+  const pl = document.getElementById('pointLine');
+  if (earned && totalPts !== null && totalPts !== undefined) pl.textContent = '⭐ 1ポイント獲得！ あなたのポイント：' + totalPts;
+  else if (earned) pl.textContent = '⭐ 1ポイント獲得の対象ですが、記録できませんでした。通信状態を確認してね。';
+  else if (totalPts !== null && totalPts !== undefined) pl.textContent = '⭐ ポイントまで あと ' + (10 - pendingResult.correct) + ' 問（あなたのポイント：' + totalPts + '）';
   const nm0 = myName();
   if (nm0 && nameCleanClient(nm0)) {
     const c0 = await claimName(nm0);
