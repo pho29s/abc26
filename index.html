@@ -81,6 +81,11 @@
   .namein { width:100%; border:2px solid #e8cfa8; border-radius:10px; padding:11px; font-size:15px; margin-top:8px; background:#fff; color:#3a2c22; }
   .next { background:#fff; border:2px dashed #e8cfa8; border-radius:12px; padding:10px 14px; margin-top:12px;
           font-size:13px; color:#7a5a3e; text-align:center; line-height:1.6; }
+  .shopitem { background:#fff; border:2px solid #ead9bd; border-radius:13px; padding:12px 14px; margin-top:10px; text-align:left; }
+  .shopitem .ttl { font-weight:800; font-size:15.5px; color:#3a2c22; line-height:1.5; }
+  .shopitem .dsc { font-size:13px; color:#8a7160; line-height:1.6; margin-top:2px; }
+  .shopitem .buy { margin-top:9px; width:100%; }
+  .shopitem .owned { margin-top:9px; text-align:center; font-weight:800; color:#2e7d32; font-size:14.5px; }
   #confettiCv { position:fixed; inset:0; width:100%; height:100%; pointer-events:none; z-index:9999; }
   .yay { animation: yayPop .65s ease; }
   @keyframes yayPop { 0% { transform:scale(1); } 35% { transform:scale(1.22); } 100% { transform:scale(1); } }
@@ -112,7 +117,17 @@
         「名前」の問題と「音」の問題が半分ずつ出ます。<br>制限時間は60秒。外した文字は最後に復習できます。<br>※ K と J は「名前」の問題だけ出ます。<br>⭐ 1回のタイムアタックで<b>10問以上正解</b>＆<b>ミス10回以内</b>だと、<b>1ポイント</b>もらえます（<b>1日1回まで</b>）。</div>
       <button class="bigbtn" id="startBtn">▶ スタート</button>
       <button class="ghost" id="rankViewBtn">🏆 ランキングを見る</button>
+      <button class="ghost" id="shopViewBtn">🛒 ポイントショップ</button>
       <div class="msg myPoints"></div>
+    </div>
+    <div id="gShop" style="display:none;">
+      <div class="q">🛒 ポイントショップ</div>
+      <div style="text-align:center;font-size:12.5px;color:#8a7160;">貯めたポイントで「特権」と交換できます。各特権は1人1回まで。<br>特権を買ったら、LINE公式アカウントに連絡してね。2,000円での購入手続きをご案内します。</div>
+      <div class="msg myPoints"></div>
+      <div id="shopList"></div>
+      <div class="msg" id="shopMsg"></div>
+      <a href="https://lin.ee/xLpo3P3" target="_blank" rel="noopener" style="display:block;text-align:center;margin-top:6px;"><button class="ghost" type="button">💬 LINEで連絡する</button></a>
+      <button class="ghost" id="shopBackBtn">もどる</button>
     </div>
     <div id="gRank" style="display:none;">
       <div class="q">🏆 ランキング</div>
@@ -411,6 +426,8 @@ function stopGame() {
   document.getElementById('gStart').style.display = 'block';
   document.getElementById('gPlay').style.display = 'none';
   document.getElementById('gEnd').style.display = 'none';
+  document.getElementById('gRank').style.display = 'none';
+  document.getElementById('gShop').style.display = 'none';
 }
 document.getElementById('shareBtn').onclick = async () => {
   const shareData = { title: document.title, text: 'ABC26 ― 26文字の「名前」と「音」を、ほんものの声で覚える無料アプリ', url: location.href };
@@ -518,8 +535,76 @@ async function fetchMyPoints() {
     if (!await ensureAuth()) return;
     const p = await fsGet('players/' + myUid);
     myPointsTotal = pointsOf(p);
+    myOwned = ownedOf(p);
     renderMyPoints();
+    renderShop();
   } catch (e) {}
+}
+/* ---------- SHOP ---------- */
+const SHOP_ITEMS = [
+  { id: 's3', price: 3, ttl: '🎥 ZOOMレッスン10分 ＋ we sing英文カード100枚', dsc: 'この2つを2,000円で買える特権です（普通に買えば5,000円）。' },
+  { id: 's7', price: 7, ttl: '🎥 ZOOMレッスン15分 ＋ Pho29す早見表 ＋ Pho29す攻略法', dsc: 'この3つの特典を2,000円で買える特権です（本当は10,000円する内容です）。' },
+  { id: 's14', price: 14, ttl: '📱 Pho29す完全版アプリ', dsc: '完全版アプリを2,000円で買える特権です。' }
+];
+let myOwned = {};
+function ownedOf(p) {
+  const f = (p && p.fields && p.fields.owned && p.fields.owned.mapValue && p.fields.owned.mapValue.fields) || {};
+  const o = {};
+  Object.keys(f).forEach(k => { o[k] = true; });
+  return o;
+}
+let shopConfirmId = null, shopBusy = false;
+function renderShop() {
+  const el = document.getElementById('shopList');
+  if (!el) return;
+  const pts = myPointsTotal;
+  el.innerHTML = '';
+  SHOP_ITEMS.forEach(it => {
+    const card = document.createElement('div');
+    card.className = 'shopitem';
+    let foot;
+    if (myOwned[it.id]) foot = '<div class="owned">✅ 購入済み（特権を持っています）</div>';
+    else if (pts === null) foot = '<button class="ghost buy" disabled>読み込み中…</button>';
+    else if (pts < it.price) foot = '<button class="ghost buy" disabled>' + it.price + 'ポイントで交換（あと ' + (it.price - pts) + ' ポイント）</button>';
+    else if (shopConfirmId === it.id) foot = '<button class="bigbtn buy" data-buy="' + it.id + '">本当に ' + it.price + ' ポイントで買う</button>';
+    else foot = '<button class="ghost buy" data-confirm="' + it.id + '">' + it.price + 'ポイントで買う</button>';
+    card.innerHTML = '<div class="ttl">' + it.ttl + '</div><div class="dsc">' + it.dsc + '</div>' + foot;
+    el.appendChild(card);
+  });
+  el.querySelectorAll('[data-confirm]').forEach(b => { b.onclick = () => { shopConfirmId = b.getAttribute('data-confirm'); renderShop(); }; });
+  el.querySelectorAll('[data-buy]').forEach(b => { b.onclick = () => buyItem(b.getAttribute('data-buy')); });
+}
+async function buyItem(itemId) {
+  if (shopBusy) return;
+  const it = SHOP_ITEMS.find(x => x.id === itemId);
+  if (!it) return;
+  const msg = document.getElementById('shopMsg');
+  shopBusy = true; shopConfirmId = null;
+  msg.textContent = '購入処理中…';
+  try {
+    if (!await ensureAuth()) throw new Error('auth');
+    const ban = await checkBan();
+    if (ban) { msg.textContent = banText(ban); shopBusy = false; return; }
+    const p = await fsGet('players/' + myUid);
+    if (!p) { msg.textContent = 'まだ記録がありません。先にタイムアタックを遊んでね。'; shopBusy = false; return; }
+    const curPts = pointsOf(p);
+    const owned = ownedOf(p);
+    if (owned[it.id]) { msg.textContent = 'その特権はもう持っています。'; myOwned = owned; myPointsTotal = curPts; renderMyPoints(); renderShop(); shopBusy = false; return; }
+    if (curPts < it.price) { msg.textContent = 'ポイントが足りません。'; myPointsTotal = curPts; renderShop(); shopBusy = false; return; }
+    const fields = { points: { integerValue: String(curPts - it.price) }, owned: { mapValue: { fields: { [it.id]: { timestampValue: tsNow() } } } } };
+    const q = 'updateMask.fieldPaths=points&updateMask.fieldPaths=' + encodeURIComponent('owned.`' + it.id + '`') + '&key=' + RANK_CFG.apiKey;
+    const r = await fetch(FS_BASE + '/players/' + myUid + '?' + q, { method: 'PATCH', headers: fsHeaders(), body: JSON.stringify({ fields }) });
+    if (!r.ok) throw new Error('buy ' + r.status);
+    owned[it.id] = true; myOwned = owned;
+    myPointsTotal = curPts - it.price;
+    renderMyPoints(); renderShop();
+    msg.textContent = '🎉 特権をゲット！ LINE公式アカウントに「ショップで特権を買いました」と連絡してね。';
+    celebrate(false);
+  } catch (e) {
+    msg.textContent = '購入できませんでした。通信状態を確認してね。';
+    renderShop();
+  }
+  shopBusy = false;
 }
 async function recordUsage(qualifies) {
   const today = todayJST(); const now = tsNow();
@@ -690,6 +775,18 @@ document.getElementById('rankViewBtn').onclick = async () => {
 };
 document.getElementById('rankBackBtn').onclick = () => {
   document.getElementById('gRank').style.display = 'none';
+  document.getElementById('gStart').style.display = 'block';
+};
+document.getElementById('shopViewBtn').onclick = async () => {
+  document.getElementById('gStart').style.display = 'none';
+  document.getElementById('gShop').style.display = 'block';
+  document.getElementById('shopMsg').textContent = '';
+  shopConfirmId = null;
+  renderShop();
+  await fetchMyPoints();
+};
+document.getElementById('shopBackBtn').onclick = () => {
+  document.getElementById('gShop').style.display = 'none';
   document.getElementById('gStart').style.display = 'block';
 };
 try { const n = localStorage.getItem('abc26_name') || ''; document.getElementById('nameInput1').value = n; document.getElementById('nameInput2').value = n; } catch (e) {}

@@ -122,12 +122,12 @@ async function loadData() {
       const usage = p.usage || {};
       const days = Object.keys(usage).sort().reverse();
       const total = days.reduce((a, k) => a + (usage[k] || 0), 0);
-      rows.push({ id: d.id, name: (bests[d.id] && bests[d.id].name) || p.name || '', best: bests[d.id] || null, points: p.points || 0, pointDate: p.pointDate || '', usage, days, total, ban: bans[d.id] || null,
+      rows.push({ id: d.id, name: (bests[d.id] && bests[d.id].name) || p.name || '', best: bests[d.id] || null, points: p.points || 0, pointDate: p.pointDate || '', owned: p.owned || {}, usage, days, total, ban: bans[d.id] || null,
                   lastSeen: p.lastSeen ? p.lastSeen.toDate() : null, createdAt: p.createdAt ? p.createdAt.toDate() : null });
     });
     // bests だけあって players がないケース（通常はない）も拾う
     Object.keys(bests).forEach(id => {
-      if (!rows.find(r => r.id === id)) rows.push({ id, name: bests[id].name || '', best: bests[id], points: 0, pointDate: '', usage: {}, days: [], total: 0, ban: bans[id] || null, lastSeen: null, createdAt: null });
+      if (!rows.find(r => r.id === id)) rows.push({ id, name: bests[id].name || '', best: bests[id], points: 0, pointDate: '', owned: {}, usage: {}, days: [], total: 0, ban: bans[id] || null, lastSeen: null, createdAt: null });
     });
     rows.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
     const totalPlays = rows.reduce((a, r) => a + r.total, 0);
@@ -148,7 +148,7 @@ async function loadData() {
       ? '<table><tr><th>名前</th><th>ベスト記録</th><th>ポイント</th><th>使った日（回数）</th><th>合計</th><th>最後に使った日</th><th>操作</th></tr>' + rows.map(r =>
           '<tr' + (r.ban ? ' class="banrow"' : '') + '><td><b>' + esc(r.name || '（ニックネーム未設定）') + '</b>' + (r.ban ? '<br><span class="banbadge">利用停止中</span><br><span class="err">理由：' + esc(r.ban.reason || '（未記入）') + '</span>' : '') + '</td>' +
           '<td>' + (r.best ? '正解' + r.best.correct + '・ミス' + r.best.wrong + '・<b>' + r.best.score + '点</b>' : '<span class="muted">まだなし</span>') + '</td>' +
-          '<td><b>' + (r.points || 0) + '</b>' + (r.pointDate ? '<br><span class="muted">最終 ' + md(r.pointDate) + '</span>' : '') + '</td>' +
+          '<td><b>' + (r.points || 0) + '</b>' + (r.pointDate ? '<br><span class="muted">最終 ' + md(r.pointDate) + '</span>' : '') + (r.owned && Object.keys(r.owned).length ? '<br><span class="muted">🎁 ' + Object.keys(r.owned).map(k => ({ s3: '3pt特権', s7: '7pt特権', s14: '完全版特権' }[k] || k)).join('・') + '</span>' : '') + '</td>' +
           '<td class="days">' + (r.days.length ? r.days.map(k => '<span>' + md(k) + '：' + r.usage[k] + '回</span>').join('') : '<span class="muted">なし</span>') + '</td>' +
           '<td>' + r.days.length + '日・' + r.total + '回</td>' +
           '<td>' + (r.lastSeen ? (r.lastSeen.getMonth() + 1) + '/' + r.lastSeen.getDate() : '―') + '</td>' +
