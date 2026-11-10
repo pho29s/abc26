@@ -4,14 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>ABC26 ― 26文字音アプリ | pho29す</title>
-<meta name="description" content="アルファベット26文字の「名前」と「音」を、ほんものの声で覚える無料アプリ（pho29す）。タップして聞いて、タイムアタックで遊べます。">
+<meta name="description" content="アルファベット26文字の「アルファベット読み」と「音」を、ほんものの声で覚える無料アプリ（pho29す）。タップして聞いて、タイムアタックで遊べます。">
 <meta name="theme-color" content="#e4572e">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="ABC26">
 <meta property="og:title" content="ABC26 ― 26文字音アプリ | pho29す">
-<meta property="og:description" content="アルファベット26文字の「名前」と「音」を、ほんものの声で覚える無料アプリ。">
+<meta property="og:description" content="アルファベット26文字の「アルファベット読み」と「音」を、ほんものの声で覚える無料アプリ。">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23e4572e'/%3E%3Ctext x='50' y='69' font-size='50' text-anchor='middle' fill='white' font-family='Arial,sans-serif' font-weight='bold'%3EAa%3C/text%3E%3C/svg%3E">
 <style>
@@ -94,7 +94,7 @@
 <body>
 <div class="wrap">
   <h1>🔤 ABC26 ― 26文字音アプリ</h1>
-  <div class="sub">アルファベット26文字の「名前」と「音」を、ほんものの声で覚える無料アプリ（pho29す）</div>
+  <div class="sub">アルファベット26文字の「アルファベット読み」と「音」を、ほんものの声で覚える無料アプリ（pho29す）</div>
   <div class="modes">
     <button class="mode on" id="mLearn">📖 まなぶ<small>タップして聞く</small></button>
     <button class="mode" id="mGame">⏱ タイムアタック<small>1分で何問できる？</small></button>
@@ -112,9 +112,9 @@
 
   <div id="game" class="panel" style="display:none;">
     <div id="gStart">
-      <div class="q">音や名前を聞いて、合う文字をタップ！</div>
+      <div class="q">音やアルファベット読みを聞いて、合う文字をタップ！</div>
       <div style="text-align:center;font-size:14px;color:#8a7160;line-height:1.7;">
-        「名前」の問題と「音」の問題が半分ずつ出ます。<br>制限時間は60秒。外した文字は最後に復習できます。<br>※ K と J は「名前」の問題だけ出ます。<br>⭐ 1回のタイムアタックで<b>10問以上正解</b>＆<b>ミス10回以内</b>だと、<b>1ポイント</b>もらえます（<b>1日1回まで</b>）。</div>
+        「アルファベット読み」の問題と「音」の問題が半分ずつ出ます。<br>制限時間は60秒。外した文字は最後に復習できます。<br>※ K と J は「アルファベット読み」の問題だけ出ます。<br>⭐ 1回のタイムアタックで<b>10問以上正解</b>＆<b>ミス10回以内</b>だと、<b>1ポイント</b>もらえます（<b>1日1回まで</b>）。</div>
       <button class="bigbtn" id="startBtn">▶ スタート</button>
       <button class="ghost" id="rankViewBtn">🏆 ランキングを見る</button>
       <button class="ghost" id="shopViewBtn">🛒 ポイントショップ</button>
@@ -168,7 +168,7 @@
 
   <button class="ghost" id="shareBtn" style="margin-top:12px;">📤 友だちにも教える（シェア）</button>
   <div class="next">つぎのステップ：無料シート「pho29す7色母音」で母音の色を覚えたら、<br>「29音診断」で弱い音を1分で測れます。</div>
-  <div class="note">音声について：フォニックス音も文字の名前も、録音した本人の声です。</div>
+  <div class="note">音声について：フォニックス音もアルファベット読みも、録音した本人の声です。</div>
 </div>
 
 <script>
@@ -286,7 +286,7 @@ function select(L, play) {
   row.innerHTML = '';
   const bName = document.createElement('button');
   bName.className = 'namebtn';
-  bName.textContent = '🔤 文字の名前を聞く';
+  bName.textContent = '🔤 アルファベット読みを聞く';
   bName.onclick = () => speakName(L);
   row.appendChild(bName);
   const subParts = L.sub ? L.sub.split(' / ') : [];
@@ -340,11 +340,11 @@ function ask() {
   locked = false;
   target = LETTERS[Math.floor(Math.random() * LETTERS.length)];
   qType = Math.random() < 0.5 ? 'name' : 'sound';
-  if (target.letter === 'k' || target.letter === 'j') qType = 'name'; // KとJは名前の問題のみ出題（指定仕様）
+  if (target.letter === 'k' || target.letter === 'j') qType = 'name'; // KとJはアルファベット読みの問題のみ出題（指定仕様）
   document.getElementById('gMsg').textContent = '';
   if (qType === 'name') {
     targetSound = null;
-    document.getElementById('gQ').textContent = '🔤 名前が聞こえた文字は？';
+    document.getElementById('gQ').textContent = '🔤 アルファベット読みが聞こえた文字は？';
     playName(target);
   } else {
     targetSound = target.sounds[Math.floor(Math.random() * target.sounds.length)];
@@ -430,7 +430,7 @@ function stopGame() {
   document.getElementById('gShop').style.display = 'none';
 }
 document.getElementById('shareBtn').onclick = async () => {
-  const shareData = { title: document.title, text: 'ABC26 ― 26文字の「名前」と「音」を、ほんものの声で覚える無料アプリ', url: location.href };
+  const shareData = { title: document.title, text: 'ABC26 ― 26文字の「アルファベット読み」と「音」を、ほんものの声で覚える無料アプリ', url: location.href };
   if (navigator.share) { try { await navigator.share(shareData); } catch (e) {} }
   else if (navigator.clipboard) {
     try { await navigator.clipboard.writeText(location.href); alert('リンクをコピーしました！'); }
